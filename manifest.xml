@@ -16,6 +16,7 @@
   <depend package="opencv2"/>
   <depend package="image_transport"/>
   <depend package="cv_bridge"/>
+  <depend package="tf"/>
 
   <rosdep name="libmagick"/>
   <rosdep name="zbar"/>

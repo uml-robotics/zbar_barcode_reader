@@ -35,18 +35,71 @@
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
 
+#include <tf/tfMessage.h>
+#include <geometry_msgs/TransformStamped.h>
+
+#include <visualization_msgs/Marker.h>
+#include <geometry_msgs/PoseStamped.h>
+
+class Visualizer
+{
+  ros::NodeHandle nh_;
+  ros::Publisher marker_pub_;
+  visualization_msgs::Marker marker_;
+public:
+  Visualizer() :
+          marker_pub_(nh_.advertise<visualization_msgs::Marker>("visualization_marker", 1))
+  {
+    marker_.ns = "qrcodes";
+    marker_.type = visualization_msgs::Marker::CUBE;
+  }
+
+  void publish(float x, float y, float z, const std::string & frame_id, int id)
+  {
+    geometry_msgs::PoseStamped pose;
+    pose.header.stamp = ros::Time::now();
+    pose.header.frame_id = frame_id;
+    pose.pose.orientation.w = 1;
+    pose.pose.position.x = x;
+    pose.pose.position.y = y;
+    pose.pose.position.z = z;
+    publish(pose, id);
+  }
+  void publish(const geometry_msgs::PoseStamped & target, int id)
+  {
+    marker_.id = id;
+    marker_.header.stamp = target.header.stamp;
+    marker_.header.frame_id = target.header.frame_id;
+    marker_.action = visualization_msgs::Marker::ADD;
+    marker_.pose = target.pose;
+
+    marker_.scale.x = 0.05;
+    marker_.scale.y = 0.05;
+    marker_.scale.z = 0.05;
+    marker_.color.r = 0.7;
+    marker_.color.g = 0.7;
+    marker_.color.b = 0.7;
+    marker_.color.a = 0.1;
+    marker_.lifetime = ros::Duration(0);
+    marker_pub_.publish(marker_);
+  }
+};
+
 class Node
 {
 private:
   barcode::BarcodeReader reader_;
   ros::NodeHandle nh_;
+  ros::Publisher pub_barcodes_;
   image_transport::ImageTransport it_;
   image_transport::Subscriber sub_image_;
-  float barcode_size; ///< Real size of the barcode, width or height (square barcode)
+
+  Visualizer vis_;
 
   void imageCallback(const sensor_msgs::ImageConstPtr& msg)
   {
     cv_bridge::CvImagePtr cv_img_ptr;
+    msg->header;
 
     try
     {
@@ -58,24 +111,51 @@ private:
       return;
     }
 
-    ROS_INFO_STREAM("Got image, has "<<reader_.parse(cv_img_ptr)<<" barcodes");
+    static int id = 0;
+    int n = reader_.parse(cv_img_ptr);
+    ROS_DEBUG_STREAM("Got image, has "<<n<<" barcodes");
     std::vector<barcode::Barcode> barcodes = reader_.getBarcodes();
-    for (int i = 0; i < reader_.getBarcodes().size(); i++)
+    for (uint i = 0; i < reader_.getBarcodes().size(); i++)
     {
-      ROS_INFO_STREAM("Barcode: " << barcodes[i].data //
-          <<" diag:"<< barcodes[i].diagonal_size//
+      ROS_DEBUG_STREAM("Barcode: " << barcodes[i].data //
           << " x:"<<barcodes[i].x//
           << " y:"<<barcodes[i].y);
+      vis_.publish(barcodes[i].x, barcodes[i].y, barcodes[i].z, msg->header.frame_id, id++ % 1000);
+    }
+    publishTransforms(barcodes, msg);
+
+  }
+
+  void publishTransforms(std::vector<barcode::Barcode> & barcodes, const sensor_msgs::ImageConstPtr& msg)
+  {
+    tf::tfMessage tf_msg;
+    geometry_msgs::TransformStamped tr;
+    tr.header = msg->header;
+    if (msg->header.frame_id == "")
+    {
+      ROS_ERROR_THROTTLE(1, "Received image with empty frame_id, would cause tf connectivity issues.");
     }
 
+    for (uint i = 0; i < barcodes.size(); i++)
+    {
+      barcode::Barcode & barcode = barcodes[i];
+      tr.child_frame_id = barcode.data;
+      tr.transform.rotation.w = 1;
+      tr.transform.translation.x = barcode.x;
+      tr.transform.translation.y = barcode.y;
+      tr.transform.translation.z = barcode.z;
+      tf_msg.transforms.push_back(tr);
+    }
+    pub_barcodes_.publish(tf_msg);
   }
 
 public:
   Node() :
+          pub_barcodes_(nh_.advertise<tf::tfMessage>("tf", 5)),
           it_(nh_),
-          sub_image_(it_.subscribe("image", 1, &Node::imageCallback, this)),
-          barcode_size(0.2)
+          sub_image_(it_.subscribe("image", 1, &Node::imageCallback, this))
   {
+    reader_.setBarcodeSize(0.16).setFOV(60);
   }
 };
 

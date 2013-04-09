@@ -39,14 +39,28 @@
 namespace barcode
 {
 
-BarcodeReader::BarcodeReader()
-{
-}
-
 BarcodeReader::~BarcodeReader()
 {
 }
 
+void BarcodeReader::updateSensorSize()
+{
+  sensor_size_ = 2 * tan(camera_horizontal_fov_deg_ / 180.0 * M_PI / 2);
+}
+
+  BarcodeReader& BarcodeReader::setFOV(double fov)
+  {
+    camera_horizontal_fov_deg_ = fov;
+    updateSensorSize();
+    return *this;
+  }
+
+  BarcodeReader& BarcodeReader::setBarcodeSize(double size)
+  {
+    barcode_size_ = size;
+    updateSensorSize();
+    return *this;
+  }
 int BarcodeReader::parse(const cv_bridge::CvImageConstPtr& cv_img_ptr)
 {
   zbar::ImageScanner scanner;
@@ -70,6 +84,8 @@ int BarcodeReader::parse(const cv_bridge::CvImageConstPtr& cv_img_ptr)
       {
         Barcode barcode;
         barcode.data = symbol->get_data();
+
+        // Get center coordinate by averaging four corners
         for (int i = 0; i < symbol->get_location_size(); i++)
         {
           barcode.x += symbol->get_location_x(i);
@@ -78,13 +94,23 @@ int BarcodeReader::parse(const cv_bridge::CvImageConstPtr& cv_img_ptr)
         barcode.x /= symbol->get_location_size();
         barcode.y /= symbol->get_location_size();
 
+        // Get diagonal length in pixels
         int dx0 = symbol->get_location_x(0) - symbol->get_location_x(2);
         int dx1 = symbol->get_location_x(1) - symbol->get_location_x(3);
         int dy0 = symbol->get_location_y(0) - symbol->get_location_y(2);
         int dy1 = symbol->get_location_y(1) - symbol->get_location_y(3);
-        float d0 = dx0 * dx0 + dy0 * dy0;
-        float d1 = dx1 * dx1 + dy1 * dy1;
-        barcode.diagonal_size = (sqrt(d0) + sqrt(d1)) / 2.0;
+        double d0 = dx0 * dx0 + dy0 * dy0;
+        double d1 = dx1 * dx1 + dy1 * dy1;
+        double diagonal_size = (sqrt(d0) + sqrt(d1)) / 2.0;
+
+        // Calculate depth
+        double sensor_resolution = sensor_size_ / width;
+        double projection_ratio = M_SQRT2 * barcode_size_ / diagonal_size;
+
+        barcode.z = projection_ratio / sensor_resolution;
+        barcode.x = (barcode.x - width / 2) * projection_ratio;
+        barcode.y = (barcode.y - height / 2) * projection_ratio;
+
         barcodes.push_back(barcode);
       }
     }
