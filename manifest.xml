@@ -1,0 +1,25 @@
+<package>
+  <description brief="zbar_barcode_reader">
+    Barcode reader based on zbar library.
+
+    Publishes all barcodes as tf messages.
+    The barcode pose is estimated based on apparent size.
+    It is not precise at all. Orientation is not calculated.
+
+    The package intended use it to fake object perception using barcodes.
+  </description>
+  <author>Mikhail Medvedev</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/zbar_barcode_reader</url>
+  <depend package="roscpp"/>
+  <depend package="opencv2"/>
+  <depend package="image_transport"/>
+  <depend package="cv_bridge"/>
+
+  <rosdep name="libmagick"/>
+  <rosdep name="zbar"/>
+
+</package>
+
+
