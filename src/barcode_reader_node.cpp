@@ -85,16 +85,54 @@ public:
   }
 };
 
+/**
+ * Publish objects to /tf
+ */
+class ObjectTfPub
+{
+private:
+  ros::NodeHandle nh_;
+  ros::NodeHandle private_nh_;
+  ros::Publisher pub_tf_;
+  ros::Publisher pub_tf_private_;
+public:
+  ObjectTfPub() :
+          private_nh_("~"),
+          pub_tf_(nh_.advertise<tf::tfMessage>("/tf", 5)),
+          pub_tf_private_(private_nh_.advertise<tf::tfMessage>("tf_objects", 5))
+  {
+  }
+  void publish(std::vector<barcode::Barcode> & barcodes, const sensor_msgs::ImageConstPtr& msg) const
+  {
+    tf::tfMessage tf_msg;
+    geometry_msgs::TransformStamped tr;
+    tr.header = msg->header;
+
+    for (uint i = 0; i < barcodes.size(); i++)
+    {
+      barcode::Barcode & barcode = barcodes[i];
+      tr.child_frame_id = barcode.data;
+      tr.transform.rotation.w = 1;
+      tr.transform.translation.x = barcode.x;
+      tr.transform.translation.y = barcode.y;
+      tr.transform.translation.z = barcode.z;
+      tf_msg.transforms.push_back(tr);
+    }
+    pub_tf_.publish(tf_msg);
+    pub_tf_private_.publish(tf_msg);
+  }
+};
+
 class Node
 {
 private:
   barcode::BarcodeReader reader_;
   ros::NodeHandle nh_;
-  ros::Publisher pub_barcodes_;
   image_transport::ImageTransport it_;
   image_transport::Subscriber sub_image_;
 
   Visualizer vis_;
+  ObjectTfPub object_pub_;
 
   void imageCallback(const sensor_msgs::ImageConstPtr& msg)
   {
@@ -122,36 +160,15 @@ private:
           << " y:"<<barcodes[i].y);
       vis_.publish(barcodes[i].x, barcodes[i].y, barcodes[i].z, msg->header.frame_id, id++ % 1000);
     }
-    publishTransforms(barcodes, msg);
-
-  }
-
-  void publishTransforms(std::vector<barcode::Barcode> & barcodes, const sensor_msgs::ImageConstPtr& msg)
-  {
-    tf::tfMessage tf_msg;
-    geometry_msgs::TransformStamped tr;
-    tr.header = msg->header;
     if (msg->header.frame_id == "")
     {
       ROS_ERROR_THROTTLE(1, "Received image with empty frame_id, would cause tf connectivity issues.");
     }
-
-    for (uint i = 0; i < barcodes.size(); i++)
-    {
-      barcode::Barcode & barcode = barcodes[i];
-      tr.child_frame_id = barcode.data;
-      tr.transform.rotation.w = 1;
-      tr.transform.translation.x = barcode.x;
-      tr.transform.translation.y = barcode.y;
-      tr.transform.translation.z = barcode.z;
-      tf_msg.transforms.push_back(tr);
-    }
-    pub_barcodes_.publish(tf_msg);
+    object_pub_.publish(barcodes, msg);
   }
 
 public:
   Node() :
-          pub_barcodes_(nh_.advertise<tf::tfMessage>("tf", 5)),
           it_(nh_),
           sub_image_(it_.subscribe("image", 1, &Node::imageCallback, this))
   {
