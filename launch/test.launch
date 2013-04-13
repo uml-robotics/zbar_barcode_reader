@@ -1,0 +1,5 @@
+<launch>
+  <node name="barcode_reader" type="barcode_reader_node" pkg="zbar_barcode_reader" output="screen" respawn="true" >
+    <!--<remap from="image" to="/gscam/image_raw"/>-->
+  </node>
+</launch>
